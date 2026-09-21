@@ -27,17 +27,41 @@ interface PageChatProps {
 }
 
 const QUICK_PROMPTS_EN = [
-  { label: 'Summarize Page', prompt: 'Please provide a clear, structured summary of this page.' },
-  { label: 'Key Takeaways', prompt: 'What are the main takeaways and central arguments on this page?' },
-  { label: 'Explain Simply', prompt: 'Explain the core idea on this page in simple, plain terms.' },
-  { label: 'Define Terms', prompt: 'Identify and explain any key terms, jargon, or vocabulary used on this page.' },
+  {
+    label: 'Solve Exercise Question',
+    prompt: 'Please provide a complete step-by-step solution for the exercise problem or question on this page, including given data, formula, working, and final answer.',
+  },
+  {
+    label: 'Explain Subtopic / Section',
+    prompt: 'Please explain the specific subtopic or chapter section on this page in clear, student-friendly terms with core concepts and definitions.',
+  },
+  {
+    label: 'Step-by-Step Example',
+    prompt: 'Walk me through the example or illustrated problem on this page with all steps and formulas clearly broken down.',
+  },
+  {
+    label: 'Key Takeaways & Summary',
+    prompt: 'Provide a structured summary of this page with key definitions, formulas, and revision points for students.',
+  },
 ];
 
 const QUICK_PROMPTS_NE = [
-  { label: 'यस पृष्ठको सारांश (Summary)', prompt: 'यस पृष्ठको मुख्य विषयवस्तु र स्पष्ट सारांश नेपालीमा प्रस्तुत गर्नुहोस्।' },
-  { label: 'मुख्य बुँदाहरू (Key Points)', prompt: 'यस पृष्ठमा भएका मुख्य बुँदाहरू र महत्त्वपूर्ण निष्कर्षहरू नेपालीमा सूचीकृत गर्नुहोस्।' },
-  { label: 'सरल व्याख्या (Explanation)', prompt: 'यस पृष्ठमा प्रस्तुत गरिएको अवधारणालाई सरल र बुझिने नेपाली भाषामा व्याख्या गर्नुहोस्।' },
-  { label: 'शब्दावली र अर्थ (Vocabulary)', prompt: 'यस पृष्ठमा प्रयोग भएका महत्त्वपूर्ण तथा कठिन शब्दहरू र तिनको अर्थ नेपालीमा बताउनुहोस्।' },
+  {
+    label: 'अभ्यास / प्रश्न समाधान',
+    prompt: 'यस पृष्ठमा रहेको अभ्यास वा प्रश्नलाई दिइएको कुरा, प्रयोग हुने सूत्र, चरणबद्ध हिसाब र अन्तिम उत्तर सहित स्पष्ट हल गर्नुहोस्।',
+  },
+  {
+    label: 'उपशीर्षकको विस्तृत व्याख्या',
+    prompt: 'यस पृष्ठमा रहेको मुख्य उपशीर्षक वा खण्डलाई विद्यार्थीले सजिलै बुझ्ने गरी सरल नेपाली भाषामा व्याख्या गर्नुहोस्।',
+  },
+  {
+    label: 'उदाहरण विश्लेषण',
+    prompt: 'यस पृष्ठको उदाहरणलाई सूत्र, दिइएको मान र चरणबद्ध विधि सहित बुझाइदिनुहोस्।',
+  },
+  {
+    label: 'मुख्य बुँदा र सारांश',
+    prompt: 'यस पृष्ठको मुख्य विषयवस्तु, परिभाषा र परीक्षामा काम लाग्ने महत्त्वपूर्ण बुँदाहरू नेपालीमा सारांशका रूपमा प्रस्तुत गर्नुहोस्।',
+  },
 ];
 
 export const PageChat: React.FC<PageChatProps> = ({
@@ -254,16 +278,40 @@ export const PageChat: React.FC<PageChatProps> = ({
             <h3 className="text-sm font-semibold text-stone-900 mb-1">
               {isNepali ? `पृष्ठ ${currentPage} सम्बन्धी केही सोध्नुहोस्` : `Ask anything about Page ${currentPage}`}
             </h3>
-            <p className="text-xs text-stone-500 max-w-xs mx-auto mb-6 leading-relaxed">
+            <p className="text-xs text-stone-500 max-w-xs mx-auto mb-4 leading-relaxed">
               {isNepali
-                ? 'एआईले यस पृष्ठको सामग्री अध्ययन गरी नेपालीमा सारांश, विस्तृत व्याख्या, मुख्य बुँदाहरू र प्रश्नहरूको उत्तर दिनेछ।'
-                : 'The AI answers questions, explains difficult paragraphs, and draws insights strictly from this single page.'}
+                ? 'एआईले यस पृष्ठको अभ्यास, उदाहरण र उपशीर्षकको अध्ययन गरी नेपालीमा चरणबद्ध समाधान र विस्तृत व्याख्या दिनेछ।'
+                : 'The AI helps students solve exercises, understand difficult subtopics, and break down examples step-by-step.'}
             </p>
+
+            {/* Student Helper Card */}
+            <div className="mb-5 p-2.5 rounded-lg bg-stone-50 border border-stone-200 text-left max-w-xs mx-auto text-[11px] leading-relaxed text-stone-600">
+              <span className="font-semibold text-stone-800 block mb-1">
+                {isNepali ? '💡 विद्यार्थीका लागि सुझाव:' : '💡 Student Learning Tip:'}
+              </span>
+              {isNepali ? (
+                <>
+                  तपाईंले अङ्ग्रेजी वा नेपाली जुनसुकै भाषामा सोध्न सक्नुहुन्छ:
+                  <span className="block font-mono text-[10px] text-stone-700 bg-white p-1 rounded mt-1 border border-stone-200">
+                    &quot;Solve exercise 1.1 question 3 ka&quot; वा &quot;उपशीर्षक २.२ व्याख्या गर्नुहोस्&quot;
+                  </span>
+                  उत्तर पूर्ण रूपमा <strong>नेपालीमा</strong> प्राप्त हुनेछ।
+                </>
+              ) : (
+                <>
+                  Ask to solve any specific problem or explain a section:
+                  <span className="block font-mono text-[10px] text-stone-700 bg-white p-1 rounded mt-1 border border-stone-200">
+                    &quot;Solve Exercise 1.1 Q3(a)&quot; or &quot;Explain Section 2.2&quot;
+                  </span>
+                  Solutions will be generated step-by-step with formulas and working.
+                </>
+              )}
+            </div>
 
             {/* Quick Prompt Chips */}
             <div className="space-y-1.5 text-left max-w-xs mx-auto">
               <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider block px-1">
-                {isNepali ? 'सुझाव गरिएका प्रश्नहरू:' : 'Suggested questions:'}
+                {isNepali ? 'द्रुत विद्यार्थी प्रश्नहरू:' : 'Student Quick Actions:'}
               </span>
               <div className="grid grid-cols-1 gap-1.5">
                 {quickPrompts.map((item, idx) => (
@@ -374,6 +422,23 @@ export const PageChat: React.FC<PageChatProps> = ({
 
       {/* Input Area */}
       <div className="p-3 bg-white border-t border-stone-200">
+        {/* Quick action chips when conversation is active */}
+        {messages.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1 scrollbar-none no-scrollbar">
+            {quickPrompts.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSendMessage(item.prompt)}
+                disabled={isLoading}
+                className="whitespace-nowrap px-2.5 py-1 rounded-full bg-stone-100 hover:bg-stone-200/90 text-stone-700 text-[11px] font-medium transition-colors border border-stone-200/60 shrink-0 disabled:opacity-50"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -390,8 +455,8 @@ export const PageChat: React.FC<PageChatProps> = ({
             onKeyDown={handleKeyDown}
             placeholder={
               isNepali
-                ? `पृष्ठ ${currentPage} सम्बन्धी केही सोध्नुहोस्... (Enter थिच्नुहोस्)`
-                : `Ask about Page ${currentPage}... (Press Enter)`
+                ? `उदा: अभ्यास १.१ प्र. ३ (क) हल गर्नुहोस् वा उपशीर्षक २.२ सम्झाउनुहोस्...`
+                : `e.g., Solve Exercise 1.1 Q3(a) or explain Subtopic 2.2...`
             }
             disabled={isLoading}
             className="w-full bg-transparent px-3 py-2.5 pr-10 text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none resize-none max-h-36"
