@@ -27,6 +27,7 @@ export default function DeepReaderPage() {
   const [bookInfo, setBookInfo] = useState<BookInfo | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [currentPageText, setCurrentPageText] = useState<string>('');
+  const [currentPageImage, setCurrentPageImage] = useState<string>('');
   const [isThumbnailsOpen, setIsThumbnailsOpen] = useState<boolean>(false);
   const [pagesWithChat, setPagesWithChat] = useState<number[]>([]);
   const [loadingPdf, setLoadingPdf] = useState<boolean>(false);
@@ -128,6 +129,8 @@ export default function DeepReaderPage() {
     if (!bookInfo) return;
     const clamped = Math.min(Math.max(1, newPage), bookInfo.totalPages);
     setCurrentPage(clamped);
+    setCurrentPageText('');
+    setCurrentPageImage('');
 
     // Update last visited page in local state
     const updated = { ...bookInfo, lastVisitedPage: clamped };
@@ -135,11 +138,14 @@ export default function DeepReaderPage() {
     saveLastBookInfo(updated);
   };
 
-  // Handle extracted text from current page canvas
+  // Handle extracted text and visual snapshot from current page canvas
   const handlePageTextExtracted = useCallback(
-    (pageNum: number, text: string) => {
+    (pageNum: number, text: string, previewUrl?: string) => {
       if (pageNum === currentPage) {
         setCurrentPageText(text);
+        if (previewUrl) {
+          setCurrentPageImage(previewUrl);
+        }
       }
     },
     [currentPage]
@@ -247,6 +253,7 @@ export default function DeepReaderPage() {
                   currentPage={currentPage}
                   totalPages={bookInfo.totalPages}
                   currentPageText={currentPageText}
+                  currentPageImage={currentPageImage}
                   onChatUpdated={refreshPagesWithChat}
                 />
               )}

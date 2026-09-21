@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenAI } from '@google/genai';
+import { formatTextbookPageText } from '@/lib/preetiConverter';
 
 // Ensure optimal runtime configuration for Vercel and Node.js environments
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // 60 seconds max timeout for AI generation on Vercel
+export const maxDuration = 60; // 60 seconds max timeout for AI generation
+
+let geminiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  if (!geminiClient) {
+    geminiClient = new GoogleGenAI({ apiKey });
+  }
+  return geminiClient;
+}
 
 /**
  * Detect whether the uploaded textbook content is in Nepali or English.
@@ -23,7 +35,7 @@ function detectTextbookLanguage(pageText: string, bookTitle: string = ''): 'nepa
   const latinCount = latinMatches ? latinMatches.length : 0;
 
   // If the textbook page or title has meaningful Devanagari characters, it is a Nepali textbook
-  if (devanagariCount >= 5 || (devanagariCount > 0 && devanagariCount >= latinCount * 0.1)) {
+  if (devanagariCount >= 5 || (devanagariCount > 0 && devanagariCount >= latinCount * 0.08)) {
     return 'nepali';
   }
 
@@ -35,11 +47,11 @@ function detectTextbookLanguage(pageText: string, bookTitle: string = ''): 'nepa
 }
 
 /**
- * DeepSeek Chat Completions API Route
- * Configured with DeepSeek-V4.1-Flash (or DEEPSEEK_MODEL env var)
- * Designed specifically for students and learners:
+ * DeepSeek & Gemini Student Reader AI API Route
  * - Solves textbook exercises, examples, questions (Abhyas/Exercise 1.1, Q3 ka/kha/a/b)
- * - Explains specific subtopics and sections (e.g. Matter 2.1, 2.2)
+ * - Explains specific subtopics and sections (e.g. Review 1.0, Matter 2.1, 2.2)
+ * - Converts legacy Preeti font text to pure Devanagari Unicode
+ * - Uses DeepSeek models (with reasoning_content extraction) and Gemini 3.8 Flash fallback
  * - Output language strictly determined by the uploaded book:
  *   Nepali Book -> 100% Nepali output (even if student asks in English/Nepglish)
  *   English Book -> 100% English output
@@ -50,7 +62,7 @@ export async function POST(req: NextRequest) {
     const {
       pageNumber,
       totalPages,
-      pageText,
+      pageText = '',
       pageImage,
       history = [],
       message,
@@ -64,32 +76,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
-
-    if (!deepseekApiKey) {
-      return NextResponse.json(
-        {
-          error:
-            'DeepSeek API key is not configured. Please set the DEEPSEEK_API_KEY in your environment variables or Vercel project settings.',
-          reply:
-            '*(DeepSeek API key is missing. Please set `DEEPSEEK_API_KEY` in your project environment variables or Vercel dashboard to enable the DeepSeek v4.1 flash reader assistant.)*',
-        },
-        { status: 503 }
-      );
-    }
-
-    const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com')
-      .trim()
-      .replace(/\/+$/, '');
-
-    // DeepSeek model preference: deepseek-v4.1-flash with fallback options
-    const configuredModel = process.env.DEEPSEEK_MODEL || 'deepseek-v4.1-flash';
-    const CANDIDATE_MODELS = [
-      configuredModel,
-      ...(configuredModel !== 'deepseek-chat' ? ['deepseek-chat'] : []),
-    ];
-
-    const cleanPageText = (pageText || '').trim();
+    // Convert any Preeti font characters to clean Devanagari Unicode
+    const { unicodeText } = formatTextbookPageText(pageText);
+    const cleanPageText = (unicodeText || pageText || '').trim();
     const detectedLanguage = detectTextbookLanguage(cleanPageText, bookTitle);
 
     // Build the language enforcement directive
@@ -99,11 +88,12 @@ export async function POST(req: NextRequest) {
 The uploaded textbook for Page ${pageNumber} is in NEPALI (नेपाली भाषा / देवनागरी लिपि).
 REGARDLESS OF THE LANGUAGE THE STUDENT USES TO ASK (English, Romanized Nepali / Nepglish, or Nepali):
 YOU MUST GENERATE 100% OF YOUR RESPONSE EXCLUSIVELY IN NEPALI (नेपाली भाषा):
-1. Even if the student asks in English (e.g., "solve exercise 1.1 question 3 ka" or "explain subtopic 2.2"):
+1. Even if the student asks in English (e.g., "simplify the Review 1.0 in details explanation", "solve exercise 1.1 question 3 ka" or "explain subtopic 2.2"):
    - Your entire response MUST BE IN FLUENT NEPALI (देवनागरी लिपि).
-   - Headings, step-by-step explanations, working out, formulas, and conclusions must all be in Nepali.
+   - Headings, step-by-step explanations, working out, formulas, definitions, and conclusions must all be in Nepali.
    - Do NOT respond in English.
 2. Cross-Lingual Terminology Mapping:
+   - "Review 1.0" -> "१.० पुनरवलोकन (Review)"
    - "Exercise" or "Abhyas" -> "अभ्यास"
    - "Question" or "Prashna" -> "प्रश्न" / "प्र.नं."
    - "Ka" / "(a)" -> "(क)"
@@ -111,7 +101,7 @@ YOU MUST GENERATE 100% OF YOUR RESPONSE EXCLUSIVELY IN NEPALI (नेपाल�
    - "Ga" / "(c)" -> "(ग)"
    - "Gha" / "(d)" -> "(घ)"
    - "Example" / "Udaharan" -> "उदाहरण"
-   - Numbers (1, 2, 3...) can be written as देवनागरी (१, २, ३...) or standard mathematical numerals when writing formulas.
+   - Sets and variables: keep as A, B, C, D, E, U or (क), (ख)
 3. Keep the tone friendly, encouraging, and clear for school and college learners in Nepal.`;
     } else if (detectedLanguage === 'english') {
       languageMandate = `### ABSOLUTE LANGUAGE DIRECTIVE (ENGLISH TEXTBOOK):
@@ -128,194 +118,215 @@ Generate 100% of your response in the language of the textbook page:
 - If the textbook page contains English text, answer 100% in English.`;
     }
 
-    const systemInstruction = `You are an expert student tutor and deep-reading AI assistant embedded in a PDF textbook reader for students and learners.
+    const systemInstruction = `You are an expert student tutor and deep-reading AI assistant embedded in an interactive PDF textbook reader.
 CRITICAL SCOPE CONSTRAINT: You are strictly and exclusively scoped to Page ${pageNumber} of ${totalPages || '?'} from the textbook "${bookTitle}".
 
 ${languageMandate}
 
 STUDENT LEARNING & PROBLEM-SOLVING DIRECTIVES:
 
-1. EXERCISE & QUESTION SOLVING (अभ्यास तथा प्रश्न समाधान):
-   - When a student asks for help with an exercise, example, problem, or sub-question (e.g., "Abhyas 1.1 question 3 ka", "solve 3 of kha", "Exercise 2.1 Q4(b)", "उदाहरण २"):
-     a. Locate the exact question and text on Page ${pageNumber}.
+1. SUBTOPIC & SECTION EXPLANATION (उपशीर्षक तथा पुनरवलोकन / खण्डको विस्तृत व्याख्या):
+   - When a student asks about a specific subtopic, review section, or heading on this page (e.g., "simplify the Review 1.0 in details explanation", "Review 1.0", "1.1 अलग्गिएका र खप्टिएका समूह", "Matter 2.1"):
+     a. Identify the exact section, definitions, given sets, examples, and discussion questions on Page ${pageNumber}.
+     b. Provide a comprehensive, easy-to-understand breakdown for students:
+        - **शीर्षक र मुख्य परिचय (Title & Overview)**: What this section covers.
+        - **विस्तृत तथा सरल व्याख्या (Detailed Concept Breakdown)**: Explain each point, rule, or set definition on the page in simple language.
+        - **समूह वा उदाहरणहरूको सूचीकरण तथा विश्लेषण (Detailed Set/Item Breakdown)**: If sets or examples like A = {रूढ सङ्ख्याहरू}, B = {बिजोर सङ्ख्याहरू}, C = {3 का अपवर्त्यहरू}, D = {8 का गुणनखण्डहरू}, E = {संयुक्त सङ्ख्याहरू}, U = {10 सम्मका गन्तीका सङ्ख्याहरू} appear, explicitly list each member element:
+          * U = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+          * A = {2, 3, 5, 7} (रूढ सङ्ख्याहरू)
+          * B = {1, 3, 5, 7, 9} (बिजोर सङ्ख्याहरू)
+          * C = {3, 6, 9} (3 का अपवर्त्यहरू)
+          * D = {1, 2, 4, 8} (8 का गुणनखण्डहरू)
+          * E = {4, 6, 8, 9, 10} (संयुक्त सङ्ख्याहरू)
+        - **छलफलका प्रश्नहरूको उत्तर (Discussion Questions Answered)**: Provide clear, complete answers to the questions asked on the page.
+        - **निष्कर्ष र परीक्षा उपयोगी बुँदा (Key Student Summary)**: 2-3 takeaway bullet points.
+
+2. EXERCISE & QUESTION SOLVING (अभ्यास तथा प्रश्न समाधान):
+   - When a student asks for help with an exercise, problem, or sub-question (e.g., "Abhyas 1.1 question 3 ka", "Exercise 2.1 Q4"):
+     a. Locate the question on Page ${pageNumber}.
      b. Provide a clean, step-by-step pedagogical solution:
-        - **प्रश्न (Question Statement)**: Quote the question being solved.
-        - **दिइएको कुरा (Given Data / Information)**: List all values, known variables, or conditions.
-        - **पत्ता लगाउनुपर्ने (To Find / Objective)**: Clearly state what needs to be calculated or proven.
-        - **प्रयोग हुने सूत्र / सिद्धान्त (Formula / Concept / Theorem Used)**: State the formula or rule clearly.
-        - **चरणबद्ध समाधान (Step-by-Step Working)**: Solve the problem showing every calculation step clearly so the learner understands every transition.
-        - **अन्तिम उत्तर (Final Answer)**: State the final result clearly with correct units (e.g., से.मी., मिटर, वर्ग एकाइ, रु., cm, etc.).
-        - **मुख्य सल्लाह / अवधारणा (Key Exam Tip / Note)**: Give a brief 1-2 sentence tip on why this step was taken or how to avoid common mistakes in exams.
+        - **प्रश्न (Question Statement)**
+        - **दिइएको कुरा (Given Data)**
+        - **प्रयोग हुने सूत्र / विधि (Formula / Method)**
+        - **चरणबद्ध समाधान (Step-by-Step Working)**
+        - **अन्तिम उत्तर (Final Answer)**
 
-2. SUBTOPIC & SECTION EXPLANATION (उपशीर्षक तथा पाठको विस्तृत व्याख्या):
-   - When a student asks to explain a specific subtopic, section heading, or numbered topic (e.g., "Matter 2.1", "2.2", "उपशीर्षक २.१", "Section 3.4", "रासायनिक प्रतिक्रिया"):
-     a. Zoom in specifically on that subtopic on Page ${pageNumber}.
-     b. Provide a structured breakdown:
-        - **शीर्षक र परिभाषा (Title & Core Definition)**: Clear, student-friendly definition.
-        - **विस्तृत तथा सरल व्याख्या (Detailed Concept Breakdown)**: Explain the idea simply with analogies or examples from the page.
-        - **मुख्य विशेषताहरू / बुँदाहरू (Key Points / Characteristics)**: Bullet points of core rules, conditions, or properties.
-        - **चित्र वा उदाहरणको व्याख्या (Diagrams, Tables, or Examples)**: If the page includes diagrams, formulas, or charts related to this subtopic, explain what they illustrate.
+3. PAGE GROUNDING:
+   - Base your answer on the content and problems on Page ${pageNumber}.
+   - Format with bold headings, clean bullet points, and well-spaced mathematics.`;
 
-3. PAGE GROUNDING & TRUTH:
-   - ONLY answer based on the actual content, formulas, questions, and explanations visible on Page ${pageNumber}.
-   - DO NOT hallucinate questions from other pages. If the requested exercise or subtopic is not on Page ${pageNumber}, politely clarify in the textbook's language:
-     - In Nepali: "यो अभ्यास/उपशीर्षक पृष्ठ ${pageNumber} मा फेला परेन। कृपया यो विषय कुन पृष्ठमा छ हेर्नुहोस् वा यस पृष्ठमा भएका अभ्यास र विषयबारे सोध्नुहोस्।"
-     - In English: "This exercise or subtopic is not found on Page ${pageNumber}. Please check whether it appears on another page, or ask about what is covered here."
-
-4. FORMATTING & PEDAGOGICAL TONE:
-   - Use bold headings, clean bullet points, numbered calculation steps, and highlighted key terms.
-   - Maintain an encouraging, intellectual, patient tutor tone that builds student confidence.`;
-
-    // Format conversation history for OpenAI-compatible DeepSeek chat completions
-    const messages: Array<{
-      role: 'system' | 'user' | 'assistant';
-      content: any;
-    }> = [
-      {
-        role: 'system',
-        content: systemInstruction,
-      },
-    ];
-
-    if (Array.isArray(history) && history.length > 0) {
-      for (const turn of history) {
-        if (turn.role === 'user') {
-          messages.push({
-            role: 'user',
-            content: turn.content,
-          });
-        } else if (turn.role === 'assistant' || turn.role === 'model') {
-          messages.push({
-            role: 'assistant',
-            content: turn.content,
-          });
-        }
-      }
-    }
-
-    // Build user prompt with page grounding and explicit textbook language directive
     const langNotice =
       detectedLanguage === 'nepali'
-        ? '[MANDATORY: TEXTBOOK IS IN NEPALI. EVEN IF STUDENT ASKS IN ENGLISH OR NEPGLISH, GENERATE THE ENTIRE RESPONSE 100% IN NEPALI (देवनागरी लिपि)]'
+        ? '[MANDATORY: TEXTBOOK IS IN NEPALI. GENERATE THE ENTIRE RESPONSE 100% IN NEPALI (देवनागरी लिपि)]'
         : detectedLanguage === 'english'
         ? '[MANDATORY: TEXTBOOK IS IN ENGLISH. GENERATE THE ENTIRE RESPONSE 100% IN ENGLISH]'
-        : '[MANDATORY: MATCH THE LANGUAGE OF THE SOURCE TEXTBOOK (NEPALI OR ENGLISH)]';
+        : '[MANDATORY: MATCH THE LANGUAGE OF THE SOURCE TEXTBOOK]';
 
-    let currentTurnContent: any = '';
+    const userPromptText = `${langNotice}\n\n[TEXTBOOK PAGE CONTENT FOR PAGE ${pageNumber}]:\n"""\n${cleanPageText || '(Image rendered on page canvas)'}\n"""\n\n[STUDENT QUERY ON PAGE ${pageNumber}]:\n${message}`;
 
-    if (cleanPageText) {
-      currentTurnContent = `${langNotice}\n\n[TEXTBOOK PAGE CONTENT FOR PAGE ${pageNumber}]:\n"""\n${cleanPageText}\n"""\n\n[STUDENT QUERY ON PAGE ${pageNumber}]:\n${message}`;
-    } else if (pageImage) {
-      // If page text couldn't be extracted, pass page image
-      const base64Data = pageImage.startsWith('data:')
-        ? pageImage
-        : `data:image/png;base64,${pageImage}`;
+    let reply = '';
+    let modelUsed = '';
 
-      currentTurnContent = [
+    // ==========================================
+    // 1. ATTEMPT DEEPSEEK API (IF KEY AVAILABLE)
+    // ==========================================
+    const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+    if (deepseekApiKey) {
+      const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com')
+        .trim()
+        .replace(/\/+$/, '');
+
+      const configuredModel = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+      const CANDIDATE_MODELS = Array.from(
+        new Set([
+          configuredModel,
+          'deepseek-chat',
+          'deepseek-reasoner',
+          'deepseek-v4.1-flash',
+          'deepseek-flash',
+        ])
+      );
+
+      const deepseekMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
         {
-          type: 'text',
-          text: `${langNotice}\n\n[TEXTBOOK PAGE CONTENT FOR PAGE ${pageNumber} (SCANNED PAGE IMAGE)]\n\n[STUDENT QUERY ON PAGE ${pageNumber}]:\n${message}`,
-        },
-        {
-          type: 'image_url',
-          image_url: {
-            url: base64Data,
-          },
+          role: 'system',
+          content: systemInstruction,
         },
       ];
-    } else {
-      currentTurnContent = `${langNotice}\n\n[NOTE: The text on Page ${pageNumber} appears empty or scanned without extractable text.]\n\n[STUDENT QUERY]:\n${message}`;
-    }
 
-    messages.push({
-      role: 'user',
-      content: currentTurnContent,
-    });
+      if (Array.isArray(history) && history.length > 0) {
+        for (const turn of history.slice(-6)) {
+          if (turn.role === 'user') {
+            deepseekMessages.push({ role: 'user', content: String(turn.content) });
+          } else if (turn.role === 'assistant' || turn.role === 'model') {
+            deepseekMessages.push({ role: 'assistant', content: String(turn.content) });
+          }
+        }
+      }
 
-    let lastError: any = null;
-    let reply = '';
+      deepseekMessages.push({
+        role: 'user',
+        content: userPromptText,
+      });
 
-    // Attempt request with primary model, then fallback if model not recognized
-    for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
-      const modelToTry = CANDIDATE_MODELS[i];
+      for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
+        const modelToTry = CANDIDATE_MODELS[i];
+        try {
+          const res = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${deepseekApiKey}`,
+            },
+            body: JSON.stringify({
+              model: modelToTry,
+              messages: deepseekMessages,
+              temperature: 0.2,
+              max_tokens: 4096,
+              stream: false,
+            }),
+          });
 
-      try {
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${deepseekApiKey}`,
-          },
-          body: JSON.stringify({
-            model: modelToTry,
-            messages,
-            temperature: 0.2, // low temperature for high precision grounding and exact math
-            max_tokens: 4096,
-            stream: false,
-          }),
-        });
-
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => null);
-          const errorText = errorData?.error?.message || (await res.text().catch(() => ''));
-          const status = res.status;
-
-          // If the model name is rejected (e.g. 404 or 400 invalid model) and we have a fallback, try fallback
-          if ((status === 404 || status === 400) && i < CANDIDATE_MODELS.length - 1) {
-            console.warn(`Model ${modelToTry} returned status ${status}, trying ${CANDIDATE_MODELS[i + 1]}...`);
-            continue;
+          if (!res.ok) {
+            const status = res.status;
+            // If model is not found on this endpoint, try next candidate
+            if ((status === 404 || status === 400) && i < CANDIDATE_MODELS.length - 1) {
+              continue;
+            }
+            break;
           }
 
-          throw new Error(
-            errorData?.error?.message ||
-              `DeepSeek API error (${status}): ${errorText || res.statusText}`
-          );
-        }
+          const data = await res.json();
+          const choice = data?.choices?.[0]?.message;
+          const content = choice?.content?.trim() || '';
+          const reasoning = choice?.reasoning_content?.trim() || '';
 
-        const data = await res.json();
-        reply =
-          data?.choices?.[0]?.message?.content?.trim() ||
-          'No response content generated by DeepSeek model.';
-        break; // Success
-      } catch (err: any) {
-        lastError = err;
-        if (i < CANDIDATE_MODELS.length - 1) {
-          continue;
+          // Prefer content; if empty (reasoner finished in thinking), use reasoning
+          const responseText = content || reasoning;
+          if (responseText) {
+            reply = responseText;
+            modelUsed = `DeepSeek (${modelToTry})`;
+            break;
+          }
+        } catch (deepseekErr) {
+          console.warn(`DeepSeek error for model ${modelToTry}:`, deepseekErr);
+          if (i < CANDIDATE_MODELS.length - 1) continue;
         }
-        throw err;
       }
     }
 
-    if (!reply && lastError) {
-      throw lastError;
+    // ==========================================
+    // 2. RESILIENT FALLBACK TO GEMINI FLASH
+    // ==========================================
+    if (!reply) {
+      const gemini = getGeminiClient();
+      if (gemini) {
+        try {
+          const parts: any[] = [];
+
+          // If high-resolution page canvas snapshot exists, attach it for visual verification
+          if (pageImage && typeof pageImage === 'string') {
+            const matches = pageImage.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              parts.push({
+                inlineData: {
+                  mimeType: matches[1],
+                  data: matches[2],
+                },
+              });
+            }
+          }
+
+          parts.push({ text: userPromptText });
+
+          const geminiResult = await gemini.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: parts,
+            config: {
+              systemInstruction,
+              temperature: 0.2,
+            },
+          });
+
+          if (geminiResult.text) {
+            reply = geminiResult.text.trim();
+            modelUsed = 'Gemini 3.8 Flash';
+          }
+        } catch (geminiErr: any) {
+          console.error('Gemini fallback error:', geminiErr);
+        }
+      }
+    }
+
+    // If still no reply and no API keys configured
+    if (!reply) {
+      return NextResponse.json(
+        {
+          error:
+            'Unable to generate response. Please verify DEEPSEEK_API_KEY or GEMINI_API_KEY in your settings.',
+          reply:
+            '*(Unable to contact AI models. Please ensure your API credentials are configured in Settings > Secrets.)*',
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({
       reply,
       pageNumber,
       detectedLanguage,
+      modelUsed,
     });
   } catch (error: any) {
-    console.error('Error generating DeepSeek response:', error);
-    const errMsg = error?.message || '';
-    const isRateLimited = errMsg.includes('429') || errMsg.includes('rate limit');
-    const isAuthError = errMsg.includes('401') || errMsg.includes('Authentication') || errMsg.includes('API key');
-
-    let userFriendlyMessage = errMsg || 'Failed to generate response from DeepSeek API';
-    if (isAuthError) {
-      userFriendlyMessage =
-        'Invalid or unauthorized DeepSeek API Key. Please verify your DEEPSEEK_API_KEY environment variable.';
-    } else if (isRateLimited) {
-      userFriendlyMessage =
-        'DeepSeek API rate limit reached. Please wait a moment and click "Retry question".';
-    }
+    console.error('Error generating AI response:', error);
+    const errMsg = error?.message || 'Failed to generate response';
 
     return NextResponse.json(
       {
-        error: userFriendlyMessage,
-        reply: `*(DeepSeek Note: ${userFriendlyMessage})*`,
+        error: errMsg,
+        reply: `*(Error: ${errMsg})*`,
       },
-      { status: isRateLimited ? 429 : isAuthError ? 401 : 500 }
+      { status: 500 }
     );
   }
 }

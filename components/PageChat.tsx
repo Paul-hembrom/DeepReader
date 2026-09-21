@@ -23,6 +23,7 @@ interface PageChatProps {
   currentPage: number;
   totalPages: number;
   currentPageText: string;
+  currentPageImage?: string;
   onChatUpdated?: () => void;
 }
 
@@ -70,6 +71,7 @@ export const PageChat: React.FC<PageChatProps> = ({
   currentPage,
   totalPages,
   currentPageText,
+  currentPageImage,
   onChatUpdated,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadPageChat(bookId, currentPage));
@@ -142,6 +144,7 @@ export const PageChat: React.FC<PageChatProps> = ({
           totalPages,
           bookTitle,
           pageText: currentPageText,
+          pageImage: currentPageImage,
           message: text,
           history: messages.slice(-10).map((m) => ({
             role: m.role,

@@ -13,6 +13,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { getPdfjs } from '@/lib/pdf-loader';
+import { formatTextbookPageText } from '@/lib/preetiConverter';
 
 interface PdfPageViewProps {
   pdfDocument: any;
@@ -58,19 +59,27 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
         renderTaskRef.current = null;
       }
 
+      let processedPageText = '';
+
       try {
         const page = await pdfDocument.getPage(currentPage);
         if (isCancelled) return;
 
         try {
           const textContent = await page.getTextContent();
-          const extractedText = textContent.items
+          const rawExtracted = textContent.items
             .map((item: any) => item.str || '')
             .join(' ')
             .replace(/\s+/g, ' ')
             .trim();
 
-          onPageTextExtracted(currentPage, extractedText);
+          const { unicodeText, isPreeti } = formatTextbookPageText(rawExtracted);
+          processedPageText = isPreeti
+            ? `${unicodeText}\n\n[मूल पाठ्यांश]: ${rawExtracted}`
+            : unicodeText;
+
+          // Initial text notification
+          onPageTextExtracted(currentPage, processedPageText);
         } catch (textErr) {
           console.warn('Text extraction error:', textErr);
         }
@@ -109,6 +118,16 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
         if (!isCancelled) {
           renderTaskRef.current = null;
           setRendering(false);
+
+          // Capture high-fidelity canvas snapshot for visual grounding in DeepSeek AI
+          let previewDataUrl: string | undefined = undefined;
+          try {
+            previewDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          } catch (canvasErr) {
+            console.warn('Canvas toDataURL warning:', canvasErr);
+          }
+
+          onPageTextExtracted(currentPage, processedPageText, previewDataUrl);
         }
       } catch (err: any) {
         if (err?.name === 'RenderingCancelledException' || isCancelled) {
