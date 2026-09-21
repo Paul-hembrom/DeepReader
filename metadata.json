@@ -1,0 +1,7 @@
+{
+  "name": "PDF Book Reader with Page AI",
+  "description": "Browser-based deep reading app for PDF books with page-by-page viewing and strictly scoped, independent AI assistance per page.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
