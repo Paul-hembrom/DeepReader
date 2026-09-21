@@ -26,11 +26,18 @@ interface PageChatProps {
   onChatUpdated?: () => void;
 }
 
-const QUICK_PROMPTS = [
+const QUICK_PROMPTS_EN = [
   { label: 'Summarize Page', prompt: 'Please provide a clear, structured summary of this page.' },
   { label: 'Key Takeaways', prompt: 'What are the main takeaways and central arguments on this page?' },
   { label: 'Explain Simply', prompt: 'Explain the core idea on this page in simple, plain terms.' },
   { label: 'Define Terms', prompt: 'Identify and explain any key terms, jargon, or vocabulary used on this page.' },
+];
+
+const QUICK_PROMPTS_NE = [
+  { label: 'यस पृष्ठको सारांश (Summary)', prompt: 'यस पृष्ठको मुख्य विषयवस्तु र स्पष्ट सारांश नेपालीमा प्रस्तुत गर्नुहोस्।' },
+  { label: 'मुख्य बुँदाहरू (Key Points)', prompt: 'यस पृष्ठमा भएका मुख्य बुँदाहरू र महत्त्वपूर्ण निष्कर्षहरू नेपालीमा सूचीकृत गर्नुहोस्।' },
+  { label: 'सरल व्याख्या (Explanation)', prompt: 'यस पृष्ठमा प्रस्तुत गरिएको अवधारणालाई सरल र बुझिने नेपाली भाषामा व्याख्या गर्नुहोस्।' },
+  { label: 'शब्दावली र अर्थ (Vocabulary)', prompt: 'यस पृष्ठमा प्रयोग भएका महत्त्वपूर्ण तथा कठिन शब्दहरू र तिनको अर्थ नेपालीमा बताउनुहोस्।' },
 ];
 
 export const PageChat: React.FC<PageChatProps> = ({
@@ -46,6 +53,10 @@ export const PageChat: React.FC<PageChatProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Detect whether the current textbook page or title contains Nepali (Devanagari script)
+  const isNepali = /[\u0900-\u097F]/.test((currentPageText || '') + ' ' + (bookTitle || ''));
+  const quickPrompts = isNepali ? QUICK_PROMPTS_NE : QUICK_PROMPTS_EN;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -165,14 +176,20 @@ export const PageChat: React.FC<PageChatProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <h2 className="text-sm font-semibold text-stone-900 tracking-tight">
-                Chat for Page {currentPage}
+                {isNepali ? `पृष्ठ ${currentPage} को कुराकानी` : `Chat for Page ${currentPage}`}
               </h2>
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-800 border border-amber-200">
-                Scoped
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                isNepali
+                  ? 'bg-red-50 text-red-700 border-red-200'
+                  : 'bg-amber-100/80 text-amber-800 border border-amber-200'
+              }`}>
+                {isNepali ? 'नेपाली मोड' : 'Scoped'}
               </span>
             </div>
             <p className="text-[11px] text-stone-500">
-              Grounded exclusively in Page {currentPage} content
+              {isNepali
+                ? `पृष्ठ ${currentPage} को सामग्रीमा आधारित (नेपालीमा मात्र जवाफ)`
+                : `Grounded exclusively in Page ${currentPage} content`}
             </p>
           </div>
         </div>
@@ -235,19 +252,21 @@ export const PageChat: React.FC<PageChatProps> = ({
               <Sparkles className="w-6 h-6 text-stone-700" />
             </div>
             <h3 className="text-sm font-semibold text-stone-900 mb-1">
-              Ask anything about Page {currentPage}
+              {isNepali ? `पृष्ठ ${currentPage} सम्बन्धी केही सोध्नुहोस्` : `Ask anything about Page ${currentPage}`}
             </h3>
             <p className="text-xs text-stone-500 max-w-xs mx-auto mb-6 leading-relaxed">
-              The AI answers questions, explains difficult paragraphs, and draws insights strictly from this single page.
+              {isNepali
+                ? 'एआईले यस पृष्ठको सामग्री अध्ययन गरी नेपालीमा सारांश, विस्तृत व्याख्या, मुख्य बुँदाहरू र प्रश्नहरूको उत्तर दिनेछ।'
+                : 'The AI answers questions, explains difficult paragraphs, and draws insights strictly from this single page.'}
             </p>
 
             {/* Quick Prompt Chips */}
             <div className="space-y-1.5 text-left max-w-xs mx-auto">
               <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider block px-1">
-                Suggested questions:
+                {isNepali ? 'सुझाव गरिएका प्रश्नहरू:' : 'Suggested questions:'}
               </span>
               <div className="grid grid-cols-1 gap-1.5">
-                {QUICK_PROMPTS.map((item, idx) => (
+                {quickPrompts.map((item, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -369,7 +388,11 @@ export const PageChat: React.FC<PageChatProps> = ({
             value={inputMessage}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={`Ask about Page ${currentPage}...`}
+            placeholder={
+              isNepali
+                ? `पृष्ठ ${currentPage} सम्बन्धी केही सोध्नुहोस्... (Enter थिच्नुहोस्)`
+                : `Ask about Page ${currentPage}... (Press Enter)`
+            }
             disabled={isLoading}
             className="w-full bg-transparent px-3 py-2.5 pr-10 text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none resize-none max-h-36"
           />
@@ -386,8 +409,12 @@ export const PageChat: React.FC<PageChatProps> = ({
         </form>
 
         <div className="flex items-center justify-between mt-1.5 px-1 text-[10px] text-stone-400">
-          <span>Press Enter to send, Shift+Enter for new line</span>
-          <span className="font-mono">P.{currentPage} Chat Isolated</span>
+          <span>
+            {isNepali ? 'पठाउन Enter थिच्नुहोस्, नयाँ लाइनका लागि Shift+Enter' : 'Press Enter to send, Shift+Enter for new line'}
+          </span>
+          <span className="font-mono">
+            {isNepali ? `पृ.${currentPage} अलग च्याट` : `P.${currentPage} Chat Isolated`}
+          </span>
         </div>
       </div>
     </div>
